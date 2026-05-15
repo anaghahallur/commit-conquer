@@ -1,0 +1,11 @@
+
+  ┌──────────────────────────────────────────┐
+  │   commit&conquer API                     │
+  │                                          │
+  │   Store:  http://localhost:4000/api/store  │
+  │   Admin:  http://localhost:4000/api/admin  │
+  │   Health: http://localhost:4000/health     │
+  │                                          │
+  │   ENV: development                     │
+  └──────────────────────────────────────────┘
+  
