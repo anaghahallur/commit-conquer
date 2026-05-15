@@ -116,6 +116,9 @@ export interface Customer {
   phone?: string;
   has_account: boolean;
   created_at: string;
+  github_id?: string;
+  github_username?: string;
+  github_token?: string;
 }
 
 export interface AuthSession {
