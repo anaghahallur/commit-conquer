@@ -90,6 +90,7 @@ export interface Order {
   billing_address: Address;
   payment_status: "awaiting" | "captured" | "refunded" | "partially_refunded";
   fulfillment_status: "not_fulfilled" | "fulfilled" | "shipped" | "delivered";
+  refunded_total: number;
   created_at: string;
   updated_at: string;
 }
@@ -116,6 +117,9 @@ export interface Customer {
   phone?: string;
   has_account: boolean;
   created_at: string;
+  github_id?: string;
+  github_username?: string;
+  github_token?: string;
 }
 
 export interface AuthSession {

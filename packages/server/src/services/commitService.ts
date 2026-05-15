@@ -3,6 +3,9 @@
  */
 
 import { AppError } from '../middleware/errorHandler';
+import { UserService } from './userService';
+
+const userService = new UserService();
 
 export interface Commit {
   id: string;
@@ -85,6 +88,14 @@ export class CommitService {
     };
 
     store.push(commit);
+
+    if (data.authorId) {
+      await userService.addPoints(data.authorId, commit.points).catch(() => {
+        // Log error but don't fail commit creation if point addition fails
+        console.error(`Failed to add points for user ${data.authorId}`);
+      });
+    }
+
     return commit;
   }
 

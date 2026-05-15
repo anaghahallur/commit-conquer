@@ -12,15 +12,15 @@ import morgan from "morgan";
 import "dotenv/config";
 
 
-import { ProductService, ServiceError } from "../modules/products/product.service.ts";
-import { AuthService }     from "../modules/auth/auth.service.ts";
-import { CartService }     from "../modules/cart/cart.service.ts";
-import { OrderService }    from "../modules/orders/order.service.ts";
-import { PaymentService }  from "../modules/payments/payment.service.ts";
-import { InventoryService } from "../modules/inventory/inventory.service.ts";
-import { DiscountService } from "../modules/discounts/discount.service.ts";
-import { ShippingService } from "../modules/shipping/shipping.service.ts";
-import { eventBus, EVENT } from "../core/event-bus.ts";
+import { ProductService, ServiceError } from "../modules/products/product.service";
+import { AuthService }     from "../modules/auth/auth.service";
+import { CartService }     from "../modules/cart/cart.service";
+import { OrderService }    from "../modules/orders/order.service";
+import { PaymentService }  from "../modules/payments/payment.service";
+import { InventoryService } from "../modules/inventory/inventory.service";
+import { DiscountService } from "../modules/discounts/discount.service";
+import { ShippingService } from "../modules/shipping/shipping.service";
+import { eventBus, EVENT } from "../core/event-bus";
 
 
 
@@ -233,8 +233,29 @@ store.post("/auth/reset-password/confirm", async (req, res) => {
 
 store.post("/auth/google", async (req, res) => {
   try {
-    const result = await AuthService.googleLogin(req.body.credential);
-    res.json(result);
+    const { credential } = req.body;
+    const { customer, token } = await AuthService.googleLogin(credential);
+    res.json({ customer, token });
+  } catch (e: any) {
+    res.status(e.code === "VALIDATION_ERROR" ? 400 : 401).json({
+      message: e.message,
+    });
+  }
+});
+
+store.post("/auth/github/connect", async (req, res) => {
+  try {
+    const { code, customer_id } = req.body;
+    const customer = await AuthService.githubConnect(code, customer_id);
+    res.json({ customer });
+  } catch (e) { handleErr(e, res); }
+});
+
+store.post("/auth/github/login", async (req, res) => {
+  try {
+    const { code } = req.body;
+    const { customer, token } = await AuthService.githubLogin(code);
+    res.json({ customer, token });
   } catch (e) { handleErr(e, res); }
 });
 
@@ -605,7 +626,7 @@ app.use((e: unknown, _req: Request, res: Response, _next: NextFunction) => {
   handleErr(e, res);
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`
   ┌──────────────────────────────────────────┐
   │   commit&conquer API                     │
@@ -618,5 +639,12 @@ app.listen(PORT, () => {
   └──────────────────────────────────────────┘
   `);
 });
+
+server.on('error', (e) => {
+  console.error('[Server] Fatal error:', e);
+});
+
+// Keep-alive to prevent clean exit if event loop somehow becomes empty
+setInterval(() => {}, 10000);
 
 export default app;

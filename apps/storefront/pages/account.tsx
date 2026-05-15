@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 
 const API = "/api/store";
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+const GITHUB_CLIENT_ID = (import.meta.env.VITE_GITHUB_CLIENT_ID || "ov2_placeholder_id").trim() as string;
 
 export default function AccountPage() {
   const [mode, setMode] = useState<"login" | "register" | "dashboard">("login");
@@ -16,36 +17,87 @@ export default function AccountPage() {
   const googleBtnRef = useRef<HTMLDivElement>(null);
 
   
-  if (token && !customer && mode !== "dashboard") {
-    
-    fetch(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => {
-        if (data?.customer) { setCustomer(data.customer); setMode("dashboard"); }
-        else { localStorage.removeItem("cc_token"); setToken(null); }
-      })
-      .catch(() => { localStorage.removeItem("cc_token"); setToken(null); });
-  }
+  useEffect(() => {
+    if (token && !customer) {
+      fetch(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => r.ok ? r.json() : null)
+        .then((data) => {
+          if (data?.customer) { setCustomer(data.customer); setMode("dashboard"); }
+          else { localStorage.removeItem("cc_token"); setToken(null); }
+        })
+        .catch(() => { localStorage.removeItem("cc_token"); setToken(null); });
+    }
+  }, [token, customer]);
 
   
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get("code");
+    if (code && token) {
+      handleGitHubCallback(code);
+    }
+  }, [token]);
+
+  const handleGitHubCallback = async (code: string) => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${API}/auth/github/connect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ code, customer_id: customer?.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || data.error?.message || "GitHub linking failed");
+      setCustomer(data.customer);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleResponse = async (response: any) => {
+    setError(""); setLoading(true);
+    try {
+      const res = await fetch(`${API}/auth/google`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential: response.credential }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error?.message || data.message || "Google sign-in failed");
+      localStorage.setItem("cc_token", data.token);
+      setToken(data.token);
+      setCustomer(data.customer);
+      setMode("dashboard");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID || mode === "dashboard") return;
 
     const initGIS = () => {
-      if ((window as any).google?.accounts?.id) {
-        (window as any).google.accounts.id.initialize({
-          client_id: GOOGLE_CLIENT_ID,
-          callback: handleGoogleResponse,
+      const g = (window as any).google;
+      if (!g?.accounts?.id) return;
+
+      g.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleGoogleResponse,
+      });
+
+      if (googleBtnRef.current) {
+        g.accounts.id.renderButton(googleBtnRef.current, {
+          theme: "outline",
+          size: "large",
+          width: 320,
+          text: "signin_with",
+          shape: "rectangular",
         });
-        if (googleBtnRef.current) {
-          (window as any).google.accounts.id.renderButton(googleBtnRef.current, {
-            theme: "outline",
-            size: "large",
-            width: 320,
-            text: "signin_with",
-            shape: "rectangular",
-          });
-        }
       }
     };
 
@@ -58,30 +110,11 @@ export default function AccountPage() {
       script.defer = true;
       script.onload = initGIS;
       document.head.appendChild(script);
-      return () => { document.head.removeChild(script); };
+      return () => {
+        try { document.head.removeChild(script); } catch (e) {}
+      };
     }
   }, [mode]);
-
-  const handleGoogleResponse = async (response: any) => {
-    setError(""); setLoading(true);
-    try {
-      const res = await fetch(`${API}/auth/google`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ credential: response.credential }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error?.message ?? "Google sign-in failed");
-      localStorage.setItem("cc_token", data.token);
-      setToken(data.token);
-      setCustomer(data.customer);
-      setMode("dashboard");
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,8 +126,8 @@ export default function AccountPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error?.message ?? "Something went wrong");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error?.message || data.message || "Something went wrong");
       localStorage.setItem("cc_token", data.token);
       setToken(data.token);
       setCustomer(data.customer);
@@ -113,14 +146,24 @@ export default function AccountPage() {
 
   const f = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((p) => ({ ...p, [k]: e.target.value }));
 
+  const connectGitHub = () => {
+    console.log("Connect GitHub clicked", { GITHUB_CLIENT_ID });
+    const redirectUri = window.location.origin + window.location.pathname;
+    window.location.href = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&scope=user,repo&redirect_uri=${encodeURIComponent(redirectUri)}`;
+  };
+
   if (mode === "dashboard" && customer) {
     return (
       <div style={s.page}>
         <div style={s.card}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 32 }}>
             <div>
-              <h1 style={s.title}>Hey, {customer.first_name || customer.email} 👋</h1>
-              <p style={{ color: "#888", marginTop: 4 }}>{customer.email}</p>
+              <h1 style={{ ...s.title, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
+                Hey, {customer.first_name || customer.email || "User"} 👋
+              </h1>
+              <p style={{ color: "#888", marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {customer.email}
+              </p>
             </div>
             <button onClick={logout} style={s.logoutBtn}>Log out</button>
           </div>
@@ -130,14 +173,22 @@ export default function AccountPage() {
               { label: "Account ID", value: customer.id },
               { label: "Email", value: customer.email },
               { label: "Name", value: [customer.first_name, customer.last_name].filter(Boolean).join(" ") || "—" },
-              { label: "Phone", value: customer.phone || "—" },
+              { label: "GitHub", value: customer.github_username ? `@${customer.github_username}` : "Not linked" },
             ].map((row) => (
               <div key={row.label} style={s.infoRow}>
                 <span style={{ color: "#888", fontSize: 13 }}>{row.label}</span>
-                <span style={{ fontWeight: 600 }}>{row.value}</span>
+                <span style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginLeft: 16 }}>
+                  {row.value}
+                </span>
               </div>
             ))}
           </div>
+
+          {!customer.github_username && (
+            <button onClick={connectGitHub} style={s.githubConnectBtn} disabled={loading}>
+              {loading ? "Connecting…" : "Link GitHub Account"}
+            </button>
+          )}
 
           <div style={{ marginTop: 32, display: "flex", gap: 12, flexWrap: "wrap" }}>
             <Link to="/" style={s.btn}>Browse Products</Link>
@@ -207,4 +258,5 @@ const s: Record<string, any> = {
   logoutBtn:  { background: "none", border: "1px solid #2a2a31", color: "#888", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 },
   btn:        { display: "inline-block", padding: "12px 24px", background: "#7c6aff", color: "#fff", textDecoration: "none", borderRadius: 10, fontWeight: 700, fontSize: 15 },
   ghostBtn:   { display: "inline-block", padding: "12px 24px", background: "none", color: "#aaa", border: "1px solid #2a2a31", textDecoration: "none", borderRadius: 10, fontSize: 15 },
+  githubConnectBtn: { width: "100%", marginTop: 24, padding: "14px", background: "#24292e", color: "#fff", border: "none", borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 },
 };

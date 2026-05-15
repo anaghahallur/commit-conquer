@@ -45,7 +45,7 @@ function _seed() {
       has_account: true,
       created_at: new Date().toISOString(),
     },
-    password_hash: _hashPassword("password123"),
+    password_hash: _hashPassword("demo1234"),
   };
   customersByEmail.set("demo@example.com", record);
   customersById.set(id, record);
@@ -330,20 +330,53 @@ export const AuthService = {
   ): Promise<{ customer: Customer; token: string }> {
     const payload = _decodeGoogleToken(googleToken);
 
+    if (!payload.email_verified) {
+      throw new ServiceError(
+        "VALIDATION_ERROR",
+        "Google account email is not verified",
+      );
+    }
+
+    // Basic verification of issuer and audience
+    const iss = payload.iss;
+    if (iss !== "accounts.google.com" && iss !== "https://accounts.google.com") {
+      throw new ServiceError("VALIDATION_ERROR", "Invalid Google token issuer");
+    }
+
+    if (
+      process.env.GOOGLE_CLIENT_ID &&
+      payload.aud !== process.env.GOOGLE_CLIENT_ID
+    ) {
+      throw new ServiceError(
+        "VALIDATION_ERROR",
+        "Google token audience mismatch",
+      );
+    }
+
     const email = payload.email;
-    if (!email) {
-      throw new ServiceError("VALIDATION_ERROR", "Google account has no email");
+    if (!email || !isValidEmail(email)) {
+      throw new ServiceError(
+        "VALIDATION_ERROR",
+        "Google account has no valid email",
+      );
     }
 
     const emailKey = email.toLowerCase().trim();
     let record = customersByEmail.get(emailKey);
 
     if (!record) {
+      // Truncate names to prevent UI layout breakage
+      const firstName = (payload.given_name || payload.name || "Google").slice(
+        0,
+        50,
+      );
+      const lastName = (payload.family_name || "User").slice(0, 50);
+
       const customer: Customer = {
         id: generateId("cust"),
         email: emailKey,
-        first_name: payload.given_name || payload.name || "Google",
-        last_name: payload.family_name || "User",
+        first_name: firstName,
+        last_name: lastName,
         has_account: true,
         created_at: new Date().toISOString(),
       };
@@ -367,6 +400,80 @@ export const AuthService = {
       (s) =>
         s.customer_id === customerId && new Date(s.expires_at) > new Date(),
     );
+  },
+
+  async githubConnect(
+    code: string,
+    customerId: string,
+  ): Promise<Customer> {
+    const record = customersById.get(customerId);
+    if (!record) throw new ServiceError("CUSTOMER_NOT_FOUND", "Customer not found");
+
+    const { access_token } = await _exchangeGitHubCode(code);
+    const githubUser = await _fetchGitHubUser(access_token);
+
+    record.customer.github_id = String(githubUser.id);
+    record.customer.github_username = githubUser.login;
+    record.customer.github_token = access_token;
+
+    customersById.set(customerId, record);
+    customersByEmail.set(record.customer.email, record);
+
+    await eventBus.emit(EVENT.CUSTOMER_UPDATED, { customer_id: customerId });
+
+    return record.customer;
+  },
+
+  async githubLogin(code: string): Promise<{ customer: Customer; token: string }> {
+    const { access_token } = await _exchangeGitHubCode(code);
+    const githubUser = await _fetchGitHubUser(access_token);
+
+    // Find user by github_id
+    let found: CustomerRecord | undefined;
+    for (const record of customersById.values()) {
+      if (record.customer.github_id === String(githubUser.id)) {
+        found = record;
+        break;
+      }
+    }
+
+    if (!found) {
+      // Try finding by email if available from GitHub
+      const email = githubUser.email?.toLowerCase().trim();
+      if (email) {
+        found = customersByEmail.get(email);
+      }
+    }
+
+    if (!found) {
+      // Create new user if not found
+      const email = githubUser.email || `${githubUser.login}@github.com`;
+      const customer: Customer = {
+        id: generateId("cust"),
+        email: email.toLowerCase().trim(),
+        first_name: githubUser.name?.split(" ")[0] || githubUser.login,
+        last_name: githubUser.name?.split(" ").slice(1).join(" ") || "GitHub",
+        github_id: String(githubUser.id),
+        github_username: githubUser.login,
+        github_token: access_token,
+        has_account: true,
+        created_at: new Date().toISOString(),
+      };
+
+      found = { customer, password_hash: "" };
+      customersByEmail.set(customer.email, found);
+      customersById.set(customer.id, found);
+
+      await eventBus.emit(EVENT.CUSTOMER_CREATED, { customer_id: customer.id, email: customer.email });
+    } else {
+      // Update existing user's github details
+      found.customer.github_id = String(githubUser.id);
+      found.customer.github_username = githubUser.login;
+      found.customer.github_token = access_token;
+    }
+
+    const token = _issueToken(found.customer.id);
+    return { customer: found.customer, token };
   },
 };
 
@@ -413,6 +520,65 @@ function _validatePasswordStrength(password: string): void {
   }
 }
 
+async function _exchangeGitHubCode(code: string): Promise<{ access_token: string }> {
+  // In a real production environment, we'd use process.env.GITHUB_CLIENT_ID/SECRET
+  const clientId = process.env.GITHUB_CLIENT_ID || "mock_client_id";
+  const clientSecret = process.env.GITHUB_CLIENT_SECRET || "mock_client_secret";
+
+  if (typeof fetch === "undefined") {
+    throw new ServiceError("INTERNAL_ERROR", "Global fetch is not available in this environment");
+  }
+
+  try {
+    const res = await fetch("https://github.com/login/oauth/access_token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+      }),
+    });
+
+    const data = await res.json();
+    if (data.error) {
+      throw new Error(data.error_description || data.error);
+    }
+    return data;
+  } catch (e: any) {
+    // If external request fails (e.g. no internet or invalid keys), 
+    // we fallback to mock behavior for the hackathon demo if specifically requested, 
+    // but here we throw to be secure.
+    throw new ServiceError("VALIDATION_ERROR", `GitHub OAuth failed: ${e.message}`);
+  }
+}
+
+async function _fetchGitHubUser(token: string): Promise<any> {
+  if (typeof fetch === "undefined") {
+    throw new ServiceError("INTERNAL_ERROR", "Global fetch is not available in this environment");
+  }
+
+  try {
+    const res = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: `token ${token}`,
+        Accept: "application/json",
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch user: ${res.statusText}`);
+    }
+
+    return await res.json();
+  } catch (e: any) {
+    throw new ServiceError("VALIDATION_ERROR", `GitHub User Fetch failed: ${e.message}`);
+  }
+}
+
 function _validateRegister(input: RegisterInput): void {
   if (!input.email || !isValidEmail(input.email)) {
     throw new ServiceError(
@@ -433,11 +599,30 @@ function _decodeGoogleToken(token: string): Record<string, any> {
   try {
     const parts = token.split(".");
     if (parts.length !== 3) {
-      throw new Error("Invalid JWT");
+      throw new Error("Invalid JWT format");
     }
+
+    // Decode header to check algorithm (optional but good)
+    const header = JSON.parse(
+      Buffer.from(parts[0], "base64url").toString("utf8"),
+    );
+    if (header.alg !== "RS256") {
+      throw new Error("Unexpected algorithm");
+    }
+
     const decoded = Buffer.from(parts[1], "base64url").toString("utf8");
-    return JSON.parse(decoded);
-  } catch {
-    throw new ServiceError("VALIDATION_ERROR", "Invalid Google token");
+    const payload = JSON.parse(decoded);
+
+    // Basic expiration check
+    if (payload.exp && payload.exp < Date.now() / 1000) {
+      throw new Error("Token expired");
+    }
+
+    return payload;
+  } catch (e: any) {
+    throw new ServiceError(
+      "VALIDATION_ERROR",
+      `Invalid Google token: ${e.message}`,
+    );
   }
 }

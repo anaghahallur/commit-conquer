@@ -6,8 +6,10 @@ import express, { Request, Response } from 'express';
 import { UserService } from './services/userService';
 import { CommitService } from './services/commitService';
 import { LeaderboardService } from './services/leaderboardService';
+import { NotificationService } from './services/notificationService';
 import { UserController } from './controllers/userController';
 import { CommitController } from './controllers/commitController';
+import { NotificationController } from './controllers/notificationController';
 import { authenticate } from './middleware/authenticate';
 import { validateBody } from './middleware/validateBody';
 import { errorHandler } from './middleware/errorHandler';
@@ -19,9 +21,31 @@ export function createApp() {
   const userService       = new UserService();
   const commitService     = new CommitService();
   const leaderboardService = new LeaderboardService();
+  const notificationService = new NotificationService();
 
   const userController   = new UserController(userService);
   const commitController = new CommitController(commitService);
+  const notificationController = new NotificationController(notificationService);
+
+  // ── Leaderboard Rank Drop Detection ──
+  // We wrap addPoints to trigger rank checks and notifications.
+  const originalAddPoints = userService.addPoints.bind(userService);
+  userService.addPoints = async (id, points) => {
+    const oldRanks = await leaderboardService.getRankMap();
+    const result = await originalAddPoints(id, points);
+    const newRanks = await leaderboardService.getRankMap();
+    
+    const drops = leaderboardService.detectRankDrops(oldRanks, newRanks);
+    for (const droppedId of drops) {
+      const overtaker = await userService.findById(id);
+      await notificationService.create({
+        userId: droppedId,
+        type: 'OVERTAKEN',
+        message: `You've been overtaken by @${overtaker.username} on the leaderboard!`
+      });
+    }
+    return result;
+  };
 
   // ── User routes ────────────────────────────────────────────────────────────
   app.get('/api/users', (req, res, next) =>
@@ -80,6 +104,17 @@ export function createApp() {
       next(err);
     }
   });
+
+  // ── Notification routes ────────────────────────────────────────────────────
+  app.get('/api/notifications',
+    authenticate,
+    (req, res, next) => notificationController.list(req, res, next),
+  );
+
+  app.post('/api/notifications/:id/read',
+    authenticate,
+    (req, res, next) => notificationController.markRead(req, res, next),
+  );
 
   // ── Health check ───────────────────────────────────────────────────────────
   app.get('/api/health', (_req: Request, res: Response) => {
