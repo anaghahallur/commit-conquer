@@ -36,6 +36,7 @@ export interface RefundInput {
 
 
 const orders = new Map<string, Order>();
+const ordersByCustomerId = new Map<string, string[]>();
 
 
 
@@ -129,6 +130,7 @@ function _seedOrders() {
         : status === "shipped" ? "shipped"
         : status === "cancelled" ? "not_fulfilled"
         : "not_fulfilled",
+      refunded_total:      status === "refunded" ? total : 0,
       created_at: createdAt.toISOString(),
       updated_at: createdAt.toISOString(),
     };
@@ -155,16 +157,18 @@ export const OrderService = {
       customer_id,
     } = input;
 
-    let result = [...orders.values()];
+    let result: Order[] = [];
+
+    if (customer_id) {
+      const ids = ordersByCustomerId.get(customer_id) || [];
+      result = ids.map(id => orders.get(id)!).filter(Boolean);
+    } else {
+      result = [...orders.values()];
+    }
 
     
     if (status !== "all") {
       result = result.filter((o) => o.status === status);
-    }
-
-    
-    if (customer_id) {
-      result = result.filter((o) => o.customer_id === customer_id);
     }
 
     
@@ -239,6 +243,7 @@ export const OrderService = {
       billing_address:     cart.billing_address ?? cart.shipping_address!,
       payment_status:      "awaiting",
       fulfillment_status:  "not_fulfilled",
+      refunded_total:      0,
       created_at:          new Date().toISOString(),
       updated_at:          new Date().toISOString(),
     };
@@ -396,10 +401,13 @@ export const OrderService = {
       throw new ServiceError("INVALID_AMOUNT", "Refund amount must be greater than zero");
     }
 
-    if (amount > order.total) {
+    const currentRefunded = order.refunded_total || 0;
+    const maxAllowed = order.total - currentRefunded;
+
+    if (amount > maxAllowed) {
       throw new ServiceError(
         "INVALID_AMOUNT",
-        `Refund amount ${formatMoney(amount)} exceeds order total ${formatMoney(order.total)}`,
+        `Refund amount ${formatMoney(amount)} exceeds maximum allowed ${formatMoney(maxAllowed)} (Order total: ${formatMoney(order.total)}, already refunded: ${formatMoney(currentRefunded)})`,
       );
     }
 
@@ -407,11 +415,13 @@ export const OrderService = {
 
     await eventBus.emit(EVENT.ORDER_REFUND_REQUESTED, { order_id, amount });
 
-    const isFullRefund = amount === order.total;
+    const newRefundedTotal = currentRefunded + amount;
+    const isFullRefund = newRefundedTotal === order.total;
 
     const updated = _update(order_id, {
       status:         isFullRefund ? "refunded" : order.status,
       payment_status: isFullRefund ? "refunded" : "partially_refunded",
+      refunded_total: newRefundedTotal,
     });
 
     await eventBus.emit(EVENT.ORDER_REFUNDED, { order_id, amount });
@@ -433,8 +443,8 @@ export const OrderService = {
   } {
     const all = [...orders.values()];
     const revenue = all
-      .filter((o) => !["cancelled", "refunded"].includes(o.status))
-      .reduce((sum, o) => sum + o.total, 0);
+      .filter((o) => o.status !== "cancelled")
+      .reduce((sum, o) => sum + (o.total - (o.refunded_total || 0)), 0);
 
     return {
       total:      all.length,
@@ -463,5 +473,13 @@ function _update(id: string, changes: Partial<Order>): Order {
   };
 
   orders.set(id, updated);
+
+  // Maintain customer_id index
+  if (updated.customer_id) {
+    const existing = ordersByCustomerId.get(updated.customer_id) || [];
+    if (!existing.includes(id)) {
+      ordersByCustomerId.set(updated.customer_id, [...existing, id]);
+    }
+  }
   return updated;
 }

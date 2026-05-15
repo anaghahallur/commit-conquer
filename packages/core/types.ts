@@ -90,6 +90,7 @@ export interface Order {
   billing_address: Address;
   payment_status: "awaiting" | "captured" | "refunded" | "partially_refunded";
   fulfillment_status: "not_fulfilled" | "fulfilled" | "shipped" | "delivered";
+  refunded_total: number;
   created_at: string;
   updated_at: string;
 }
