@@ -86,10 +86,21 @@ export class UserService {
     return { user: toPublic(user), token: generateToken(user.id) };
   }
 
-  async addPoints(id: string, points: number): Promise<PublicUser> {
+  async addPoints(
+    id: string, 
+    points: number, 
+    onAfterUpdate?: (userId: string) => Promise<void>
+  ): Promise<PublicUser> {
     const user = store.find((u) => u.id === id);
     if (!user) throw new AppError(`User ${id} not found`, 404);
     user.totalPoints += points;
+    
+    if (onAfterUpdate) {
+      await onAfterUpdate(id).catch(err => {
+        console.error('[UserService] Error in addPoints callback:', err);
+      });
+    }
+
     return toPublic(user);
   }
 }
