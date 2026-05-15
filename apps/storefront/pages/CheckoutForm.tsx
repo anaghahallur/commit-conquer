@@ -285,8 +285,7 @@ const STEPS: { key: Step; label: string }[] = [
 
 export default function CheckoutForm() {
   const { items, total } = useCartState() ?? { items: [], total: 0 };
-  const dispatch = useCartDispatch();
-  const clearCart: () => void = (dispatch as any)?.clearCart ?? (() => {});
+  const { clearCart } = useCartDispatch() as any;
 
   const [step, setStep] = useState<Step>("address");
   const [address, setAddress] = useState<AddressForm>(EMPTY_ADDRESS);

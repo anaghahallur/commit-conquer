@@ -1,7 +1,8 @@
 
 
-import { createContext, useContext, useReducer } from "react";
+import { createContext, useContext, useReducer, useMemo } from "react";
 import { Outlet, Link, NavLink, useNavigate } from "react-router-dom";
+import CartDrawer from "./CartDrawer";
 
 
 
@@ -47,6 +48,8 @@ function cartReducer(state, action) {
       return { ...state, items: [] };
     case "TOGGLE_CART":
       return { ...state, isOpen: action.payload ?? !state.isOpen };
+    case "BATCH":
+      return action.payload.reduce(cartReducer, state);
     default:
       return state;
   }
@@ -54,14 +57,26 @@ function cartReducer(state, action) {
 
 function CartProvider({ children }) {
   const [state, dispatch] = useReducer(cartReducer, { items: [], isOpen: false });
-  const derived = {
+
+  const derived = useMemo(() => ({
     ...state,
     count: state.items.reduce((n, i) => n + (Number(i.quantity) || 0), 0),
     total: state.items.reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.quantity) || 0), 0),
-  };
+  }), [state]);
+
+  const actions = useMemo(() => ({
+    addItem: (item) => dispatch({ type: "ADD_ITEM", payload: item }),
+    removeItem: (id, variantId) => dispatch({ type: "REMOVE_ITEM", payload: { id, variantId } }),
+    updateQty: (id, variantId, quantity) => dispatch({ type: "UPDATE_QTY", payload: { id, variantId, quantity } }),
+    clearCart: () => dispatch({ type: "CLEAR" }),
+    toggleCart: (open) => dispatch({ type: "TOGGLE_CART", payload: open }),
+    batch: (actions) => dispatch({ type: "BATCH", payload: actions }),
+    dispatch,
+  }), [dispatch]);
+
   return (
     <CartStateCtx.Provider value={derived}>
-      <CartDispatchCtx.Provider value={dispatch}>
+      <CartDispatchCtx.Provider value={actions}>
         {children}
       </CartDispatchCtx.Provider>
     </CartStateCtx.Provider>
@@ -104,7 +119,7 @@ function Header() {
       </nav>
 
       <button
-        onClick={() => dispatch({ type: "TOGGLE_CART", payload: true })}
+        onClick={() => dispatch.toggleCart(true)}
         style={s.cartBtn}
         aria-label="Open cart"
       >
@@ -149,6 +164,7 @@ export default function Layout() {
           <Outlet />   {/* React Router renders child page here */}
         </main>
         <Footer />
+        <CartDrawer />
       </div>
     </CartProvider>
   );

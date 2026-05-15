@@ -5,10 +5,10 @@ import { useNavigate } from "react-router-dom";
 
 export default function CartDrawer() {
   const cart     = useCartState();
-  const dispatch = useCartDispatch();
+  const { toggleCart, updateQty, removeItem } = useCartDispatch();
   const navigate = useNavigate();
 
-  const close = () => dispatch({ type: "TOGGLE_CART", payload: false });
+  const close = () => toggleCart(false);
 
   const goCheckout = () => {
     close();
@@ -60,7 +60,7 @@ export default function CartDrawer() {
 }
 
 function CartItem({ item }) {
-  const dispatch = useCartDispatch();
+  const { updateQty, removeItem } = useCartDispatch();
   const key = { id: item.id, variantId: item.variantId };
 
   return (
@@ -75,10 +75,10 @@ function CartItem({ item }) {
           ${(item.price * item.quantity).toFixed(2)}
         </p>
         <div style={s.qtyRow}>
-          <button style={s.qtyBtn} onClick={() => dispatch({ type: "UPDATE_QTY", payload: { ...key, quantity: item.quantity - 1 } })}>−</button>
+          <button style={s.qtyBtn} onClick={() => updateQty(item.id, item.variantId, item.quantity - 1)}>−</button>
           <span style={{ minWidth: 20, textAlign: "center", fontSize: 14, fontWeight: 600 }}>{item.quantity}</span>
-          <button style={s.qtyBtn} onClick={() => dispatch({ type: "UPDATE_QTY", payload: { ...key, quantity: item.quantity + 1 } })}>+</button>
-          <button style={s.removeBtn} onClick={() => dispatch({ type: "REMOVE_ITEM", payload: key })}>Remove</button>
+          <button style={s.qtyBtn} onClick={() => updateQty(item.id, item.variantId, item.quantity + 1)}>+</button>
+          <button style={s.removeBtn} onClick={() => removeItem(item.id, item.variantId)}>Remove</button>
         </div>
       </div>
     </div>
