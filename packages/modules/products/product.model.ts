@@ -217,15 +217,17 @@ const byHandle = new Map<string, Product>(SEED_PRODUCTS.map((p) => [p.handle, p]
 export const ProductModel = {
 
   findAll(): Product[] {
-    return [...byId.values()];
+    return [...byId.values()].filter((p) => !p.deleted_at);
   },
 
   findById(id: string): Product | undefined {
-    return byId.get(id);
+    const p = byId.get(id);
+    return p && !p.deleted_at ? p : undefined;
   },
 
   findByHandle(handle: string): Product | undefined {
-    return byHandle.get(handle);
+    const p = byHandle.get(handle);
+    return p && !p.deleted_at ? p : undefined;
   },
 
   findByCategory(category: string): Product[] {
@@ -246,11 +248,19 @@ export const ProductModel = {
     );
   },
 
-  create(data: Omit<Product, "id" | "handle" | "created_at" | "updated_at">): Product {
+  create(data: Omit<Product, "id" | "handle" | "created_at" | "updated_at" | "deleted_at">): Product {
+    const handle = toHandle(data.title);
+
+    // Enforce uniqueness for active products (Partial Unique Index simulation)
+    const existing = byHandle.get(handle);
+    if (existing && !existing.deleted_at) {
+      throw new Error(`Conflict: Active product with handle "${handle}" already exists.`);
+    }
+
     const product: Product = {
       ...data,
       id: generateId("prod"),
-      handle: toHandle(data.title),
+      handle,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -272,14 +282,21 @@ export const ProductModel = {
     const updated: Product = {
       ...existing,
       ...changes,
-      id,                              
+      id,
       handle: newHandle,
       updated_at: new Date().toISOString(),
     };
 
     if (newHandle !== existing.handle) {
+      // Check if new handle is taken by another active product
+      const takenBy = byHandle.get(newHandle);
+      if (takenBy && !takenBy.deleted_at) {
+        throw new Error(`Conflict: Handle "${newHandle}" is already taken by another active product.`);
+      }
       byHandle.delete(existing.handle);
       byHandle.set(newHandle, updated);
+    } else {
+      byHandle.set(existing.handle, updated);
     }
 
     byId.set(id, updated);
@@ -288,9 +305,11 @@ export const ProductModel = {
 
   delete(id: string): boolean {
     const product = byId.get(id);
-    if (!product) return false;
+    if (!product || product.deleted_at) return false;
+
+    // Soft delete: keep in byId, but mark as deleted and remove from handle unique map
+    product.deleted_at = new Date().toISOString();
     byHandle.delete(product.handle);
-    byId.delete(id);
     return true;
   },
 
