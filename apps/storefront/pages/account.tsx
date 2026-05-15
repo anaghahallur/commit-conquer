@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 
-const API = "/api/store";
+const API = "/api/v1/store";
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 const GITHUB_CLIENT_ID = (import.meta.env.VITE_GITHUB_CLIENT_ID || "ov2_placeholder_id").trim() as string;
 
@@ -141,6 +141,10 @@ export default function AccountPage() {
 
   const logout = () => {
     localStorage.removeItem("cc_token");
+    ["checkout", "stripe", "payment"].forEach((k) => {
+      localStorage.removeItem(k);
+      sessionStorage.removeItem(k);
+    });
     setToken(null); setCustomer(null); setMode("login");
   };
 
