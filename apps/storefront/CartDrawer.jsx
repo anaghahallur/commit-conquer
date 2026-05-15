@@ -153,11 +153,15 @@ function CartItem({ item }) {
         </p>
 
         {item.size && (
-          <p style={s.meta}>Size: {item.size}</p>
+          <p style={s.meta}>
+            Size: {item.size}
+          </p>
         )}
 
         {item.color && (
-          <p style={s.meta}>Color: {item.color}</p>
+          <p style={s.meta}>
+            Color: {item.color}
+          </p>
         )}
 
         <p
@@ -167,7 +171,12 @@ function CartItem({ item }) {
             marginTop: 4,
           }}
         >
-          ${((item.price * item.quantity) / 100).toFixed(2)}
+          $
+          {(
+            ((Number(item.price) || 0) *
+              (Number(item.quantity) || 0)) /
+            100
+          ).toFixed(2)}
         </p>
 
         <div style={s.qtyRow}>
@@ -176,7 +185,8 @@ function CartItem({ item }) {
             onClick={() =>
               dispatch.updateQty({
                 ...key,
-                quantity: item.quantity - 1,
+                quantity:
+                  item.quantity - 1,
               })
             }
           >
@@ -199,7 +209,8 @@ function CartItem({ item }) {
             onClick={() =>
               dispatch.updateQty({
                 ...key,
-                quantity: item.quantity + 1,
+                quantity:
+                  item.quantity + 1,
               })
             }
           >
@@ -239,18 +250,22 @@ const s = {
     zIndex: 300,
     display: "flex",
     flexDirection: "column",
-    boxShadow: "-8px 0 40px rgba(0,0,0,0.5)",
+    boxShadow:
+      "-8px 0 40px rgba(0,0,0,0.5)",
     transition:
       "transform 0.3s cubic-bezier(0.4,0,0.2,1)",
-    borderLeft: "1px solid #2a2a31",
+    borderLeft:
+      "1px solid #2a2a31",
   },
 
   head: {
     display: "flex",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent:
+      "space-between",
     padding: "20px 24px",
-    borderBottom: "1px solid #2a2a31",
+    borderBottom:
+      "1px solid #2a2a31",
   },
 
   closeBtn: {
@@ -277,7 +292,8 @@ const s = {
     display: "flex",
     gap: 14,
     padding: "16px 0",
-    borderBottom: "1px solid #1c1c21",
+    borderBottom:
+      "1px solid #1c1c21",
   },
 
   thumb: {
@@ -303,7 +319,8 @@ const s = {
   qtyBtn: {
     width: 26,
     height: 26,
-    border: "1px solid #2a2a31",
+    border:
+      "1px solid #2a2a31",
     background: "#1c1c21",
     color: "#e8e8f0",
     cursor: "pointer",
@@ -322,7 +339,8 @@ const s = {
 
   foot: {
     padding: "20px 24px",
-    borderTop: "1px solid #2a2a31",
+    borderTop:
+      "1px solid #2a2a31",
     display: "flex",
     flexDirection: "column",
     gap: 10,
@@ -345,7 +363,8 @@ const s = {
     padding: "11px",
     background: "none",
     color: "#888",
-    border: "1px solid #2a2a31",
+    border:
+      "1px solid #2a2a31",
     borderRadius: 10,
     fontSize: 14,
     cursor: "pointer",
