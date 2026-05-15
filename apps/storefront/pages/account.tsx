@@ -119,8 +119,12 @@ export default function AccountPage() {
         <div style={s.card}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 32 }}>
             <div>
-              <h1 style={s.title}>Hey, {customer.first_name || customer.email} 👋</h1>
-              <p style={{ color: "#888", marginTop: 4 }}>{customer.email}</p>
+              <h1 style={{ ...s.title, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>
+                Hey, {customer.first_name || customer.email || "User"} 👋
+              </h1>
+              <p style={{ color: "#888", marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {customer.email}
+              </p>
             </div>
             <button onClick={logout} style={s.logoutBtn}>Log out</button>
           </div>
@@ -134,7 +138,9 @@ export default function AccountPage() {
             ].map((row) => (
               <div key={row.label} style={s.infoRow}>
                 <span style={{ color: "#888", fontSize: 13 }}>{row.label}</span>
-                <span style={{ fontWeight: 600 }}>{row.value}</span>
+                <span style={{ fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginLeft: 16 }}>
+                  {row.value}
+                </span>
               </div>
             ))}
           </div>

@@ -330,20 +330,53 @@ export const AuthService = {
   ): Promise<{ customer: Customer; token: string }> {
     const payload = _decodeGoogleToken(googleToken);
 
+    if (!payload.email_verified) {
+      throw new ServiceError(
+        "VALIDATION_ERROR",
+        "Google account email is not verified",
+      );
+    }
+
+    // Basic verification of issuer and audience
+    const iss = payload.iss;
+    if (iss !== "accounts.google.com" && iss !== "https://accounts.google.com") {
+      throw new ServiceError("VALIDATION_ERROR", "Invalid Google token issuer");
+    }
+
+    if (
+      process.env.GOOGLE_CLIENT_ID &&
+      payload.aud !== process.env.GOOGLE_CLIENT_ID
+    ) {
+      throw new ServiceError(
+        "VALIDATION_ERROR",
+        "Google token audience mismatch",
+      );
+    }
+
     const email = payload.email;
-    if (!email) {
-      throw new ServiceError("VALIDATION_ERROR", "Google account has no email");
+    if (!email || !isValidEmail(email)) {
+      throw new ServiceError(
+        "VALIDATION_ERROR",
+        "Google account has no valid email",
+      );
     }
 
     const emailKey = email.toLowerCase().trim();
     let record = customersByEmail.get(emailKey);
 
     if (!record) {
+      // Truncate names to prevent UI layout breakage
+      const firstName = (payload.given_name || payload.name || "Google").slice(
+        0,
+        50,
+      );
+      const lastName = (payload.family_name || "User").slice(0, 50);
+
       const customer: Customer = {
         id: generateId("cust"),
         email: emailKey,
-        first_name: payload.given_name || payload.name || "Google",
-        last_name: payload.family_name || "User",
+        first_name: firstName,
+        last_name: lastName,
         has_account: true,
         created_at: new Date().toISOString(),
       };
@@ -433,11 +466,30 @@ function _decodeGoogleToken(token: string): Record<string, any> {
   try {
     const parts = token.split(".");
     if (parts.length !== 3) {
-      throw new Error("Invalid JWT");
+      throw new Error("Invalid JWT format");
     }
+
+    // Decode header to check algorithm (optional but good)
+    const header = JSON.parse(
+      Buffer.from(parts[0], "base64url").toString("utf8"),
+    );
+    if (header.alg !== "RS256") {
+      throw new Error("Unexpected algorithm");
+    }
+
     const decoded = Buffer.from(parts[1], "base64url").toString("utf8");
-    return JSON.parse(decoded);
-  } catch {
-    throw new ServiceError("VALIDATION_ERROR", "Invalid Google token");
+    const payload = JSON.parse(decoded);
+
+    // Basic expiration check
+    if (payload.exp && payload.exp < Date.now() / 1000) {
+      throw new Error("Token expired");
+    }
+
+    return payload;
+  } catch (e: any) {
+    throw new ServiceError(
+      "VALIDATION_ERROR",
+      `Invalid Google token: ${e.message}`,
+    );
   }
 }

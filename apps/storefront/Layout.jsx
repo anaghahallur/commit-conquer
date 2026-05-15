@@ -56,8 +56,8 @@ function CartProvider({ children }) {
   const [state, dispatch] = useReducer(cartReducer, { items: [], isOpen: false });
   const derived = {
     ...state,
-    count: state.items.reduce((n, i) => n + i.quantity, 0),
-    total: state.items.reduce((s, i) => s + i.price * i.quantity, 0),
+    count: state.items.reduce((n, i) => n + (Number(i.quantity) || 0), 0),
+    total: state.items.reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.quantity) || 0), 0),
   };
   return (
     <CartStateCtx.Provider value={derived}>
@@ -113,7 +113,9 @@ function Header() {
           <line x1="3" y1="6" x2="21" y2="6"/>
           <path d="M16 10a4 4 0 01-8 0"/>
         </svg>
-        {cart?.count > 0 && <span style={s.badge}>{cart.count > 99 ? "99+" : cart.count}</span>}
+        {typeof cart?.count === "number" && cart.count > 0 && (
+          <span style={s.badge}>{cart.count > 99 ? "99+" : cart.count}</span>
+        )}
       </button>
     </header>
   );

@@ -547,7 +547,7 @@ function SkeletonCard() {
 
 
 export default function StorefrontPage() {
-  const { itemCount } = useCartState();
+  const { count: itemCount } = useCartState() as any;
   
   const { addItem } = useCartDispatch() as any;
 
